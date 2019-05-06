@@ -174,83 +174,55 @@ program = statement <* eol
 
 --------Eval---------
 
-table :: [(String, Result)]
-table = []
-
-data Result = I Integer | B Bool | S String | D String deriving (Eq, Show)--FIXME
-
-instance Functor Result where
-    fmap = undefined
-
-toRes :: Token -> Result
-toRes (IntLit i) = I i
-toRes (StrLit s) = S s
-toRes (BoolLit b) = B b
-toRes (IdLit d) = D d
-
 --using hash??
 
-assignIdent :: Result -> Result -> [(String,Result)] -> [(String,Result)]
-assignIdent (IdLit d) res [] = res:[]
-assignIdent q@(IdLit d) res@(_,r) (s,v):ts = if d == s then (d,r):ts
-                                                     else assignIdent q res ts
+assign :: Token -> Token -> Token
+assign = undefined
 
-evalBinary :: Op -> Result
+evalBinary :: Op -> Token
 evalBinary op = case op of
-                         Add e1 e2 -> I $ evalExpr e1 + evalExpr e2
-                         Sub e1 e2 -> I $ evalExpr e1 - evalExpr e2
-                         Mul e1 e2 -> I $ evalExpr e1 * evalExpr e2
-                         Div e1 e2 -> I $ evalExpr e1 / evalExpr e2
-                         Mod e1 e2 -> I $ evalExpr e1 `mod` evalExpr e2
-                         Equ e1 e2 -> B $ evalExpr e1 == evalExpr e2
-                         Les e1 e2 -> B $ evalExpr e1 < evalExpr e2
-                         Mor e1 e2 -> B $ evalExpr e1 > evalExpr e2
-                         Ass e1 e2 -> lookup (key (evalExpr e1)) $ assignIdent (evalExpr e1) (evalExpr e2) table where
-                             key (_ d) = d
+                  Add e1 e2 -> f1 (+)  (evalExpr e1) (evalExpr e2)
+                  Sub e1 e2 -> f1 (-)  (evalExpr e1) (evalExpr e2)
+                  Mul e1 e2 -> f1 (*)  (evalExpr e1) (evalExpr e2)
+                  Div e1 e2 -> f1 div  (evalExpr e1) (evalExpr e2) 
+                  Mod e1 e2 -> f1 mod  (evalExpr e1) (evalExpr e2)
+                  --Equ e1 e2 -> g1 (==) (evalExpr e1) (evalExpr e2)
+                  --Les e1 e2 -> g1 (<)  (evalExpr e1) (evalExpr e2)
+                  --Mor e1 e2 -> g1 (>)  (evalExpr e1) (evalExpr e2)
+                  Ass e1 e2 -> undefined
+                where
+                    --f1 :: (Integer -> Integer -> Integer) -> Token -> Token -> Token
+                    f1 f (IntLit  n1) (IntLit  n2) = IntLit  $ f n1 n2
+                    --g1 :: (a -> a -> Bool) -> Token -> Token -> Token
+                    --g1 g (BoolLit b1) (BoolLit b2) = BoolLit $ g b1 b2
 
---evalExpr :: Expr -> Result
---evalExpr (Leaf t) = toRes t
---evalExpr (NegExpr e) = (-1) * evalExpr e
---evalExpr (Binary op) = evalBinary op
---
---evalState :: State -> [Result]
---evalState  (Simple e) = evalExpr e
---evalState  (IfState e s) = if evalExpr e then evalState s else []
---evalState  (IfElseState e s1 s2) = if evalExpr e then evalState s1 else evalState s2
---evalState  (WhileState e s) = if evalExpr e then evalState s else []
---evalState  (List ss) = case ss of
---                   [] -> []
---                   x:xs -> evalState x : evalState xs
+evalExpr :: Expr -> Token
+evalExpr (Leaf t) = t
+evalExpr (NegExpr e) = (\(IntLit n) -> IntLit ((-1)*n)) $ evalExpr e
+evalExpr (BinaryExpr op) = evalBinary op
 
-evalExpr :: Expr -> IO ()
-evalExpr (Leaf t) = toRes t
-evalExpr (NegExpr e) = do
-    num <- evalExpr e
-    (-1) * num
-evalExpr (Binary op) = evalBinary op
-
-evalState :: State -> IO ()
-evalState (Simple e) = do
-    evalExpr e
-    return ()
-evalState (IfState e s) = do
-    if evalExpr e then
-                  evalState s
-                  else return ()
-evalState (IfElseState e s1 s2) = do
-    if evalExpr e then
-                  evalState s1
-                  else evalState s2
-evalState (WhileState e s) = do
-    if evalExpr e then
-                  evalState s
-                  evalState (WhileState e s)
-                  else return ()
-evalState (List ss) = case ss of
-                   [] -> return ()
-                   x:xs -> do
-                       evalState x
-                       evalState xs
+--evalState :: State -> IO ()
+--evalState (Simple e) = do
+--    evalExpr e
+--    return ()
+--evalState (IfState e s) = do
+--    if evalExpr e == (BoolLit True) then
+--                  evalState s
+--                  else return ()
+--evalState (IfElseState e s1 s2) = do
+--    if evalExpr e == (BoolLit True) then
+--                  evalState s1
+--                  else evalState s2
+--evalState (WhileState e s) = do
+--    if evalExpr e == (BoolLit True) then
+--                  evalState s
+--                  evalState (WhileState e s)
+--                  else return ()
+--evalState (List ss) = case ss of
+--                   [] -> return ()
+--                   x:xs -> do
+--                       evalState x
+--                       evalState xs
 
 ------------------
 
