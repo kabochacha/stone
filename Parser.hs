@@ -186,43 +186,43 @@ evalBinary op = case op of
                   Mul e1 e2 -> f1 (*)  (evalExpr e1) (evalExpr e2)
                   Div e1 e2 -> f1 div  (evalExpr e1) (evalExpr e2) 
                   Mod e1 e2 -> f1 mod  (evalExpr e1) (evalExpr e2)
-                  --Equ e1 e2 -> g1 (==) (evalExpr e1) (evalExpr e2)
-                  --Les e1 e2 -> g1 (<)  (evalExpr e1) (evalExpr e2)
-                  --Mor e1 e2 -> g1 (>)  (evalExpr e1) (evalExpr e2)
+                  Equ e1 e2 -> g1 (==) (evalExpr e1) (evalExpr e2)
+                  Les e1 e2 -> g2 (<)  (evalExpr e1) (evalExpr e2)
+                  Mor e1 e2 -> g2 (>)  (evalExpr e1) (evalExpr e2)
                   Ass e1 e2 -> undefined
                 where
-                    --f1 :: (Integer -> Integer -> Integer) -> Token -> Token -> Token
                     f1 f (IntLit  n1) (IntLit  n2) = IntLit  $ f n1 n2
-                    --g1 :: (a -> a -> Bool) -> Token -> Token -> Token
-                    --g1 g (BoolLit b1) (BoolLit b2) = BoolLit $ g b1 b2
+                    g1 f t1 t2 = BoolLit $ f (show t1) (show t2)
+                    g2 f (IntLit n1) (IntLit n2) = BoolLit $ f n1 n2
 
 evalExpr :: Expr -> Token
 evalExpr (Leaf t) = t
 evalExpr (NegExpr e) = (\(IntLit n) -> IntLit ((-1)*n)) $ evalExpr e
 evalExpr (BinaryExpr op) = evalBinary op
 
---evalState :: State -> IO ()
---evalState (Simple e) = do
---    evalExpr e
---    return ()
---evalState (IfState e s) = do
---    if evalExpr e == (BoolLit True) then
---                  evalState s
---                  else return ()
---evalState (IfElseState e s1 s2) = do
---    if evalExpr e == (BoolLit True) then
---                  evalState s1
---                  else evalState s2
---evalState (WhileState e s) = do
---    if evalExpr e == (BoolLit True) then
---                  evalState s
---                  evalState (WhileState e s)
---                  else return ()
---evalState (List ss) = case ss of
---                   [] -> return ()
---                   x:xs -> do
---                       evalState x
---                       evalState xs
+evalState :: State -> IO ()
+evalState (Simple e) = do
+    putStrLn . show $ evalExpr e
+evalState (IfState e s) = do
+    if evalExpr e == (BoolLit True) then
+                  evalState s
+                  else
+                  return ()
+evalState (IfElseState e s1 s2) = do
+    if evalExpr e == (BoolLit True) then
+                  evalState s1
+                  else
+                  evalState s2
+evalState (WhileState e s) = do
+    if evalExpr e == (BoolLit True) then
+                  evalState s
+                  evalState (WhileState e s)
+                  else return ()
+evalState (List ss) = case ss of
+                   [] -> return ()
+                   x:xs -> do
+                       evalState x
+                       evalState xs
 
 ------------------
 
@@ -235,5 +235,6 @@ sample4 = "if x == 1 {\n;;a =      6}"
 sample5 = "sum  = 0\n   i= 1\n while i <  10 {sum = sum + i\n  i = i+1\n}\n sum;   "
 sample6 = "a = True;;;\n b =  False\n a"
 
-
+test = pull . runParser (many0 program) 
+    where pull (Just (x,s)) = x
 
