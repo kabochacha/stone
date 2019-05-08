@@ -9,7 +9,13 @@ import Data.Char
 import qualified Data.Map as Map
 import qualified Control.Monad.State as St
 
-newtype Env = Env {runEnv :: Map.Map String Result} deriving (Eq, Show)
+newtype Env = Env {runEnv :: Map.Map String Result}
+    deriving (Eq)
+
+instance Show Env where
+    show (Env dic) = f (Map.toList dic) where
+        f [] = ""
+        f (x:xs) = (fst x) ++ " = " ++ show (snd x) ++ "\n" ++ f xs
 
 data Result = I Integer | B Bool | S String | Shit
     deriving (Eq, Show)
@@ -53,7 +59,9 @@ evalExpr (Leaf (IdLit   p)) = do
     case Map.lookup p (runEnv env) of
       Nothing -> return (Shit) -- error
       Just r  -> return r
-evalExpr (NegExpr e) = undefined
+evalExpr (NegExpr e) = do
+    r <- evalExpr e
+    return $ I ((\(I i) -> (-1) * i) r)
 evalExpr (BinaryExpr op) = evalBinary op
 
 evalStmt :: Stmt -> St.State Env ()
@@ -84,12 +92,8 @@ evalStmt (List (s:ss)) = do
     evalStmt s
     evalStmt $ List ss
 
-sample1 = "a=2\nb = 1\na+b"
-sample2 = "   a =   2; \n   b =       1\n a +b   "
-sample3 = "even = 0\nodd = 0\n"
-sample4 = "if x == 1 {\n;;a =      6}"
-sample5 = "sum  = 0\n   i= 1\n while i <  10 {sum = sum + i\n  i = i+1\n}\n sum;   "
-sample6 = "a = True;;;\n b =  False\n a"
+eval :: [Stmt] -> ((),Env)
+eval stmts = St.runState (sequence_ (map evalStmt stmts)) (Env Map.empty)
 
-test = pull . runParser (many0 program) 
-    where pull (Just (x,s)) = x
+
+
