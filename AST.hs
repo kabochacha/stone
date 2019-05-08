@@ -39,9 +39,9 @@ zero1 :: a -> Parser a -> Parser a
 zero1 a p = p <|> pure a
 
 eol :: Parser String
-eol = spaces *> many0 (char ';' <|> char '\n')
---eol :: Parser Char
---eol = spaces *> char ';' <|> many0 (satisfy (\c -> c /= '\n' && isSpace c)) *> (char '\n')
+eol = spaces *> many0 (char ';'<|> char '\n')
+--eol :: Parser String
+--eol = spaces *> chars ";" <|> many0 (satisfy (\c -> c /= '\n' && isSpace c)) *> (chars "\n")
 
 tokenize :: Parser Token
 tokenize = spaces *> token
@@ -69,7 +69,7 @@ op    = spaces *> (Add <$ char '+'
     <|> Ass <$ char  '=')
 
 expr :: Parser Expr
-expr = spaces *> (foldl (flip ($)) <$> factor <*> many0 ((\op' l r -> BinaryExpr (op' r l)) <$> op <*> factor))
+expr = spaces *> (foldl (flip ($)) <$> factor <*> many0 ((\op' r l -> BinaryExpr (op' l r)) <$> op <*> factor))
 
 block :: Parser Stmt
 block = spaces *> char '{' *>
@@ -78,10 +78,10 @@ block = spaces *> char '{' *>
         <* spaces <* char '}'
 
 statement :: Parser Stmt
-statement = spaces  *> chars    "if" *> (IfStmt     <$> expr <*> block)
-        <|> spaces  *> chars    "if" *> (IfElseStmt <$> expr <*> block <*> (spaces *> chars "else" *> block))
-        <|> spaces  *> chars "while" *> (WhileStmt  <$> expr <*> block)
-        <|> Simple <$> expr
+statement =  spaces  *> chars    "if" *> (IfElseStmt <$> expr <*> block <*> (spaces *> chars "else" *> block))
+         <|> spaces  *> chars    "if" *> (IfStmt     <$> expr <*> block)
+         <|> spaces  *> chars "while" *> (WhileStmt  <$> expr <*> block)
+         <|> Simple <$> expr
 
 program :: Parser Stmt
 program = statement <* eol
