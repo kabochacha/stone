@@ -2,7 +2,6 @@
 module Stone where
 
 import Parser
-import AST
 import Eval
 
 sample1 = "a=2\nb = 1\n c  = a+b"

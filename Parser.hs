@@ -90,3 +90,94 @@ ident = (:) <$> alpha <*> many0 alphaNum
 --tokens :: Parser [String]
 --tokens = many0 (spaces *> token) <* spaces
 
+------------AST----------------
+
+data Token = IntLit  Integer
+           | BoolLit Bool
+           | StrLit  String
+           | IdLit   String
+           deriving (Show, Eq)
+     
+data Op1 = Add Expr Expr
+        | Sub Expr Expr
+        | Mul Expr Expr
+        | Div Expr Expr
+        | Mod Expr Expr
+        | Equ Expr Expr
+        | Les Expr Expr
+        | Mor Expr Expr
+        deriving (Show, Eq)
+
+data Op0 = Ass Expr Expr
+    deriving (Show, Eq)
+
+data Expr = Leaf Token
+          | NegExpr Expr
+          | BinaryExpr0 Op0
+          | BinaryExpr1 Op1
+          deriving (Show, Eq)
+
+data Stmt = Simple Expr
+          | IfStmt Expr Stmt
+          | IfElseStmt Expr Stmt Stmt
+          | WhileStmt Expr Stmt
+          | List [Stmt]
+          deriving (Show, Eq)
+
+zero1 :: a -> Parser a -> Parser a
+zero1 a p = p <|> pure a
+
+eol :: Parser String
+eol = spaces *> many0 (char ';'<|> char '\n')
+--eol :: Parser String
+--eol = spaces *> chars ";" <|> many0 (satisfy (\c -> c /= '\n' && isSpace c)) *> (chars "\n")
+
+tokenize :: Parser Token
+tokenize = spaces *> token
+    where token = IntLit  . read <$> int
+              <|> BoolLit . read <$> bool
+              <|> StrLit         <$> string
+              <|> IdLit          <$> ident
+
+primary :: Parser Expr
+primary = spaces *> char '(' *> expr <* spaces <* char ')'
+      <|> Leaf <$> tokenize
+
+factor :: Parser Expr
+factor = spaces *> (NegExpr <$> (char '-' *> primary) <|> primary)
+
+op0 :: Parser (Expr -> Expr -> Op0)
+op0 = spaces *> (Ass <$ char '=')
+
+op1 :: Parser (Expr -> Expr -> Op1)
+op1    = spaces *>
+       (Add <$ char  '+'
+    <|> Sub <$ char  '-'
+    <|> Mul <$ char  '*'
+    <|> Div <$ char  '/'
+    <|> Mod <$ char  '%'
+    <|> Equ <$ chars "=="
+    <|> Les <$ char  '<'
+    <|> Mor <$ char  '>')
+
+expr :: Parser Expr
+expr = spaces *> (flip (foldr ($)) <$> many0 ((\l op r -> BinaryExpr0 (op l r)) <$> expr1 <*> op0) <*> expr1)
+
+expr1 :: Parser Expr
+expr1 = spaces *> (foldl (flip ($)) <$> factor <*> many0 ((\op' r l -> BinaryExpr1 (op' l r)) <$> op1 <*> factor))
+
+block :: Parser Stmt
+block = spaces *> char '{' *>
+         -- ((\l r -> List (l:r)) <$> (zero1 (List []) statement) <*> many0 (eol *> statement))
+        (List <$> ((++) <$> (zero1 [] ((:) <$> statement <*> pure [])) <*> many0 (eol *> statement)))
+        <* spaces <* char '}'
+
+statement :: Parser Stmt
+statement =  spaces  *> chars    "if" *> (IfElseStmt <$> expr <*> block <*> (spaces *> chars "else" *> block))
+         <|> spaces  *> chars    "if" *> (IfStmt     <$> expr <*> block)
+         <|> spaces  *> chars "while" *> (WhileStmt  <$> expr <*> block)
+         <|> Simple <$> expr
+
+program :: Parser Stmt
+program = statement <* eol
+

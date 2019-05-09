@@ -2,7 +2,6 @@
 module Eval where
 
 import Parser
-import AST
 import Control.Applicative
 import Control.Monad
 import Data.Char
@@ -24,36 +23,47 @@ intBinary :: (Integer -> Integer -> Integer) -> Expr -> Expr -> St.State Env (Re
 intBinary f e1 e2 = do
     r1 <- evalExpr e1
     r2 <- evalExpr e2
-    return (I ((\(I i1) (I i2) -> f i1 i2) r1 r2))
+    return (f' f r1 r2)
+        where
+            f' f (I i1) (I i2) = I $ f i1 i2
+            f' _ _      _      = Shit
 
-evalBinary :: Op -> St.State Env (Result)
-evalBinary (Add e1 e2) = intBinary (+) e1 e2
-evalBinary (Sub e1 e2) = intBinary (-) e1 e2
-evalBinary (Mul e1 e2) = intBinary (*) e1 e2
-evalBinary (Div e1 e2) = intBinary div e1 e2
-evalBinary (Mod e1 e2) = intBinary mod e1 e2
-evalBinary (Equ e1 e2) = do
+evalBinary1 :: Op1 -> St.State Env (Result)
+evalBinary1 (Add e1 e2) = intBinary (+) e1 e2
+evalBinary1 (Sub e1 e2) = intBinary (-) e1 e2
+evalBinary1 (Mul e1 e2) = intBinary (*) e1 e2
+evalBinary1 (Div e1 e2) = intBinary div e1 e2
+evalBinary1 (Mod e1 e2) = intBinary mod e1 e2
+evalBinary1 (Equ e1 e2) = do
     r1 <- evalExpr e1
     r2 <- evalExpr e2
-    return (B (r1==r2))
-evalBinary (Mor e1 e2) = do
+    return $ B (r1==r2)
+evalBinary1 (Mor e1 e2) = do
     r1 <- evalExpr e1
     r2 <- evalExpr e2
-    return $ B ((\(I i1) (I i2) -> i1 > i2) r1 r2)
-evalBinary (Les e1 e2) = do
+    return $ B (f' r1 r2)
+        where
+            f' (I i1) (I i2) = i1 > i2
+            f' _      _      = False
+evalBinary1 (Les e1 e2) = do
     r1 <- evalExpr e1
     r2 <- evalExpr e2
-    return $ B ((\(I i1) (I i2) -> i1 < i2) r1 r2)
-evalBinary (Ass (Leaf (IdLit p)) e) = do
+    return $ B (f' r1 r2)
+        where
+            f' (I i1) (I i2) = i1 < i2
+            f' _      _      = False
+
+evalBinary0 :: Op0 -> St.State Env (Result)
+evalBinary0 (Ass (Leaf (IdLit p)) e) = do
     v <- evalExpr e
     env <- St.get
     St.put . Env $ Map.insert p v (runEnv env)
     return v
 
 evalExpr :: Expr -> St.State Env (Result)
-evalExpr (Leaf (IntLit  i)) = return (I i)
-evalExpr (Leaf (BoolLit b)) = return (B b)
-evalExpr (Leaf (StrLit  s)) = return (S s)
+evalExpr (Leaf (IntLit  i)) = return $ I i
+evalExpr (Leaf (BoolLit b)) = return $ B b
+evalExpr (Leaf (StrLit  s)) = return $ S s
 evalExpr (Leaf (IdLit   p)) = do
     env <- St.get
     case Map.lookup p (runEnv env) of
@@ -62,7 +72,8 @@ evalExpr (Leaf (IdLit   p)) = do
 evalExpr (NegExpr e) = do
     r <- evalExpr e
     return $ I ((\(I i) -> (-1) * i) r)
-evalExpr (BinaryExpr op) = evalBinary op
+evalExpr (BinaryExpr0 op0) = evalBinary0 op0
+evalExpr (BinaryExpr1 op1) = evalBinary1 op1
 
 evalStmt :: Stmt -> St.State Env ()
 evalStmt (Simple e) = do
