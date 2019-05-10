@@ -130,8 +130,7 @@ zero1 :: a -> Parser a -> Parser a
 zero1 a p = p <|> pure a
 
 eol :: Parser String
-eol = spaces *> (chars ";" <|> chars "\n")
---eol = spaces *> many0 (char ';'<|> char '\n')
+eol = spaces *> many0 (char ';'<|> char '\n')
 --eol :: Parser String
 --eol = spaces *> chars ";" <|> many0 (satisfy (\c -> c /= '\n' && isSpace c)) *> (chars "\n")
 
