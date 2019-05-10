@@ -132,6 +132,27 @@ eol = spaces *> many0 (char ';'<|> char '\n')
 --eol :: Parser String
 --eol = spaces *> chars ";" <|> many0 (satisfy (\c -> c /= '\n' && isSpace c)) *> (chars "\n")
 
+-------add function-----------
+
+param :: Parser Expr
+param = spaces *> (Leaf <$> (IdLit <$> ident))
+
+params :: Parser Expr
+params = param <*> many0 (spaces *> char ',' *> param) 
+
+paramList :: Parser Expr
+paramList = spaces *> char '(' *> (zero1 () params) <* spaces <* char ')'
+
+def :: Parser
+def = spaces *> chars "def" *>
+    ((Expr?) <$> param <*> paramList <*> block)
+
+args :: Parser
+args = (Expr?) <$> expr <*> many0 (spaces *> char ',' *> expr)
+
+postfix :: Parser
+postfix = spaces *> char '(' *> (zero1 () args) <* spaces <* char ')' 
+
 tokenize :: Parser Token
 tokenize = spaces *> token
     where token = IntLit  . read <$> int
@@ -140,8 +161,10 @@ tokenize = spaces *> token
               <|> IdLit          <$> ident
 
 primary :: Parser Expr
-primary = spaces *> char '(' *> expr <* spaces <* char ')'
-      <|> Leaf <$> tokenize
+primary = <$> (spaces *> char '(' *> expr <* spaces <* char ')'
+      <|> Leaf <$> tokenize) <*> many0 postfix
+
+--------added function---------
 
 factor :: Parser Expr
 factor = spaces *> (NegExpr <$> (char '-' *> primary) <|> primary)
@@ -160,11 +183,12 @@ op1    = spaces *>
     <|> Les <$ char  '<'
     <|> Mor <$ char  '>')
 
-expr :: Parser Expr
-expr = spaces *> (flip (foldr ($)) <$> many0 ((\l op r -> BinaryExpr0 (op l r)) <$> expr1 <*> op0) <*> expr1)
+expr  :: Parser Expr
+expr  = spaces *> (flip (foldr ($)) <$> many0 ((\l op r -> BinaryExpr0 (op l r)) <$> expr1 <*> op0) <*> expr1)
 
 expr1 :: Parser Expr
 expr1 = spaces *> (foldl (flip ($)) <$> factor <*> many0 ((\op' r l -> BinaryExpr1 (op' l r)) <$> op1 <*> factor))
+
 
 block :: Parser Stmt
 block = spaces *> char '{' *>
