@@ -115,15 +115,15 @@ data Expr = Leaf Token
           | NegExpr Expr
           | BinaryExpr0 Op0
           | BinaryExpr1 Op1
-          | Es [Expr]
+          | Zwei Expr [[Expr]] --FIXME
           deriving (Show, Eq)
 
-data Stmt = Simple Expr
+data Stmt = Simple Expr [Expr]--FIXME
           | IfStmt Expr Stmt
           | IfElseStmt Expr Stmt Stmt
           | WhileStmt Expr Stmt
           | List [Stmt]
-          | Def Expr Expr Stmt --FIXME
+          | Def Expr [Expr] Stmt
           deriving (Show, Eq)
 
 zero1 :: a -> Parser a -> Parser a
@@ -135,7 +135,7 @@ eol = spaces *> many0 (char ';'<|> char '\n')
 --eol = spaces *> chars ";" <|> many0 (satisfy (\c -> c /= '\n' && isSpace c)) *> (chars "\n")
 
 numberExpr :: Parser Expr
-numberExpr = spaces *> (Leaf <$> (IdLit . read <$> int))
+numberExpr = spaces *> (Leaf <$> (IntLit . read <$> int))
 
 idExpr :: Parser Expr
 idExpr = spaces *> (Leaf <$> (IdLit <$> ident))
@@ -146,38 +146,31 @@ boolExpr = spaces *> (Leaf <$> (BoolLit .read <$> bool))
 stringExpr :: Parser Expr
 stringExpr = spaces *> (Leaf <$> (StrLit <$> string))
 
---tokenize :: Parser Token
---tokenize = spaces *> token
---    where token = IntLit  . read <$> int
---              <|> BoolLit . read <$> bool
---              <|> StrLit         <$> string
---              <|> IdLit          <$> ident
-
 param :: Parser Expr
 param = idExpr
 
-params :: Parser Expr
-params = Es <$> ((:) <$> param <*> many0 (spaces *> char ',' *> param))
+params :: Parser [Expr]
+params = (:) <$> param <*> many0 (spaces *> char ',' *> param)
 
-paramList :: Parser Expr
+paramList :: Parser [Expr]
 paramList = spaces *> char '(' *>
-    (zero1 (Es []) params)
+    (zero1 [] params)
     <* spaces <* char ')'
 
-args :: Parser Expr
-args = Es <$> ((:) <$> expr <*> many0 (spaces *> char ',' *> expr))
+args :: Parser [Expr]
+args = (:) <$> expr <*> many0 (spaces *> char ',' *> expr)
 
-postfix :: Parser Expr
+postfix :: Parser [Expr]
 postfix = spaces *> char '(' *>
-    (Es <$> (zero1 [] ((:) <$> args <*> pure [])))
+    (zero1 [] args)
     <* spaces <* char ')' 
 
 primary :: Parser Expr
-primary = Es <$> ((:) <$> (spaces *> char '(' *> expr <* spaces <* char ')'
+primary = Zwei <$> (spaces *> char '(' *> expr <* spaces <* char ')'
       <|> numberExpr
       <|> idExpr
       <|> boolExpr
-      <|> stringExpr) <*> many0 postfix)
+      <|> stringExpr) <*> many0 postfix
 
 factor :: Parser Expr
 factor = spaces *> (NegExpr <$> (char '-' *> primary) <|> primary)
@@ -208,12 +201,11 @@ def = spaces *> chars "def" *>
 
 block :: Parser Stmt
 block = spaces *> char '{' *>
-         -- ((\l r -> List (l:r)) <$> (zero1 (List []) statement) <*> many0 (eol *> statement))
         (List <$> ((++) <$> (zero1 [] ((:) <$> statement <*> pure [])) <*> many0 (eol *> statement)))
         <* spaces <* char '}'
 
 simple :: Parser Stmt
-simple = Simple <$> expr <*> (zero1 () args)
+simple = Simple <$> expr <*> (zero1 [] args)
 
 statement :: Parser Stmt
 statement =  spaces  *> chars    "if" *> (IfElseStmt <$> expr <*> block <*> (spaces *> chars "else" *> block))
@@ -221,6 +213,6 @@ statement =  spaces  *> chars    "if" *> (IfElseStmt <$> expr <*> block <*> (spa
          <|> spaces  *> chars "while" *> (WhileStmt  <$> expr <*> block)
          <|> simple
 
-program :: Parser Stmt
-program = zero1 () (def <|> statement) <* eol
+program :: Parser [Stmt]
+program = (zero1 [] ((\s -> [s]) <$> def <|> (\s -> [s]) <$> statement) <* eol)
 
