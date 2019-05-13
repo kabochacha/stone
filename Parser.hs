@@ -115,10 +115,10 @@ data Expr = Leaf Token
           | NegExpr Expr
           | BinaryExpr0 Op0
           | BinaryExpr1 Op1
-          | Zwei Expr [[Expr]] --FIXME
+          | FuncCall Expr [[Expr]]
           deriving (Show, Eq)
 
-data Stmt = Simple Expr [Expr]--FIXME
+data Stmt = Simple Expr 
           | IfStmt Expr Stmt
           | IfElseStmt Expr Stmt Stmt
           | WhileStmt Expr Stmt
@@ -166,7 +166,7 @@ postfix = spaces *> char '(' *>
     <* spaces <* char ')' 
 
 primary :: Parser Expr
-primary = Zwei <$> (spaces *> char '(' *> expr <* spaces <* char ')'
+primary = FuncCall <$> (spaces *> char '(' *> expr <* spaces <* char ')'
       <|> numberExpr
       <|> idExpr
       <|> boolExpr
@@ -205,7 +205,7 @@ block = spaces *> char '{' *>
         <* spaces <* char '}'
 
 simple :: Parser Stmt
-simple = Simple <$> expr <*> (zero1 [] args)
+simple = Simple <$> expr
 
 statement :: Parser Stmt
 statement =  spaces  *> chars    "if" *> (IfElseStmt <$> expr <*> block <*> (spaces *> chars "else" *> block))
@@ -214,5 +214,9 @@ statement =  spaces  *> chars    "if" *> (IfElseStmt <$> expr <*> block <*> (spa
          <|> simple
 
 program :: Parser [Stmt]
-program = (zero1 [] ((\s -> [s]) <$> def <|> (\s -> [s]) <$> statement) <* eol)
+--program = (zero1 [] ((\s -> [s]) <$> def <|> (\s -> [s]) <$> statement) <* eol)
+program = many0 ((def <|> statement) <* eol)
+
+
+
 
