@@ -6,105 +6,162 @@ import Control.Applicative
 import Control.Monad
 import Data.Char
 import qualified Data.Map as Map
-import qualified Control.Monad.State as St
+import Data.IORef
+import Debug.Trace
+import System.IO.Unsafe
 
-newtype Env = Env {runEnv :: Map.Map String Result}
+data Env = Env {localEnv  :: IORef (Map.Map String Result),
+                parentEnv :: Maybe Env} deriving (Eq)
+
+showEnv :: Env -> IO String
+showEnv env = do
+    local <- readIORef $ localEnv env
+    case parentEnv env of
+      Nothing -> do
+        return $ "Env " ++ showsPrec 11 local "" ++ " Nothing"
+      Just p -> do
+        pp <- showEnv p
+        return $ "Env " ++ showsPrec 11 local "" ++ " (" ++ pp ++ ")" 
+
+printEnv :: Env -> IO ()
+printEnv env = showEnv env >>= putStrLn
+
+data Result = Func Stmt Env | I Integer | B Bool | S String | NoResult | Shit String
     deriving (Eq)
 
-instance Show Env where
-    show (Env dic) = f (Map.toList dic) where
-        f [] = ""
-        f (x:xs) = (fst x) ++ " = " ++ show (snd x) ++ "\n" ++ f xs
+instance Show Result where
+    show (Func s _) = show s
+    show (I i)      = show i
+    show (B b)      = show b
+    show (S s)      = s
+    show NoResult   = ""
+    show (Shit s)   = s
 
-data Result = I Integer | B Bool | S String | Shit
-    deriving (Eq, Show)
-
-intBinary :: (Integer -> Integer -> Integer) -> Expr -> Expr -> St.State Env (Result)
-intBinary f e1 e2 = do
-    r1 <- evalExpr e1
-    r2 <- evalExpr e2
-    return (f' f r1 r2)
+intBinary :: (Integer -> Integer -> Integer) -> Expr -> Expr -> Env -> IO Result
+intBinary f e1 e2 env = do
+    r1 <- evalExpr e1 env
+    r2 <- evalExpr e2 env
+    return $ f' f r1 r2
         where
             f' f (I i1) (I i2) = I $ f i1 i2
-            f' _ _      _      = Shit
+            f' _ _      _      = Shit "not a binary-operatable variable!"
 
-evalBinary1 :: Op1 -> St.State Env (Result)
-evalBinary1 (Add e1 e2) = intBinary (+) e1 e2
-evalBinary1 (Sub e1 e2) = intBinary (-) e1 e2
-evalBinary1 (Mul e1 e2) = intBinary (*) e1 e2
-evalBinary1 (Div e1 e2) = intBinary div e1 e2
-evalBinary1 (Mod e1 e2) = intBinary mod e1 e2
-evalBinary1 (Equ e1 e2) = do
-    r1 <- evalExpr e1
-    r2 <- evalExpr e2
+evalBinary1 :: Op1 -> Env -> IO Result
+evalBinary1 (Add e1 e2) env = intBinary (+) e1 e2 env
+evalBinary1 (Sub e1 e2) env = intBinary (-) e1 e2 env
+evalBinary1 (Mul e1 e2) env = intBinary (*) e1 e2 env
+evalBinary1 (Div e1 e2) env = intBinary div e1 e2 env
+evalBinary1 (Mod e1 e2) env = intBinary mod e1 e2 env
+evalBinary1 (Equ e1 e2) env = do
+    r1 <- evalExpr e1 env
+    r2 <- evalExpr e2 env
     return $ B (r1==r2)
-evalBinary1 (Mor e1 e2) = do
-    r1 <- evalExpr e1
-    r2 <- evalExpr e2
+evalBinary1 (Mor e1 e2) env = do
+    r1 <- evalExpr e1 env
+    r2 <- evalExpr e2 env
     return $ B (f' r1 r2)
         where
             f' (I i1) (I i2) = i1 > i2
             f' _      _      = False
-evalBinary1 (Les e1 e2) = do
-    r1 <- evalExpr e1
-    r2 <- evalExpr e2
+evalBinary1 (Les e1 e2) env = do
+    r1 <- evalExpr e1 env
+    r2 <- evalExpr e2 env
     return $ B (f' r1 r2)
         where
             f' (I i1) (I i2) = i1 < i2
             f' _      _      = False
 
-evalBinary0 :: Op0 -> St.State Env (Result)
-evalBinary0 (Ass (Leaf (IdLit p)) e) = do
-    v <- evalExpr e
-    env <- St.get
-    St.put . Env $ Map.insert p v (runEnv env)
+evalBinary0 :: Op0 -> Env -> IO Result
+evalBinary0 (Ass (Leaf (IdLit p)) e) env = do
+    v <- evalExpr e env
+    modifyIORef (localEnv env) (Map.insert p v)
     return v
+evalBinary0 _ _ = return $ Shit "not a assignable variable!"
 
-evalExpr :: Expr -> St.State Env (Result)
-evalExpr (Leaf (IntLit  i)) = return $ I i
-evalExpr (Leaf (BoolLit b)) = return $ B b
-evalExpr (Leaf (StrLit  s)) = return $ S s
-evalExpr (Leaf (IdLit   p)) = do
-    env <- St.get
-    case Map.lookup p (runEnv env) of
-      Nothing -> return (Shit) -- error
+getName :: Expr -> IO String
+getName (Leaf (IdLit p)) = return p
+getName _                = return "" --FIXME
+
+evalFunc :: Result -> [Expr] -> Env -> IO Result
+evalFunc (Func s@(Def name args stmt) defEnv) things evalEnv =
+    if length args /= length things then return (Shit "not exact number of parameters!") else do
+        local <- newIORef (Map.empty) :: IO (IORef (Map.Map String Result))
+        a <- forM [0..((length args)-1)] $ \i -> do
+            k <- getName (args!!i) -- what if not a (S s)?
+            v <- evalExpr (things!!i) evalEnv
+            --modifyIORef (localEnv (Env local (Just defEnv))) (Map.insert k v)
+            modifyIORef local (Map.insert k v)
+        -- ll <- readIORef local
+        -- trace ("call " ++ show name ++ " with " ++ show ll) (return ())
+        evalStmt stmt (Env local (Just defEnv)) -- which one should be the parentEnv?
+evalFunc _ _ _ = return $ Shit "not a function!"
+
+evalExpr :: Expr -> Env -> IO Result
+evalExpr (Leaf (IntLit  i)) _   = return $ I i
+evalExpr (Leaf (BoolLit b)) _   = return $ B b
+evalExpr (Leaf (StrLit  s)) _   = return $ S s
+evalExpr e@(Leaf (IdLit p)) env = do
+    -- trace ("read " ++ p ++ " in " ++ unsafePerformIO (showEnv env)) (return ())
+    local <- readIORef $ localEnv env
+    case Map.lookup p local of
+      -- Just r  -> trace ("--> " ++ show r) $ return r
       Just r  -> return r
-evalExpr (NegExpr e) = do
-    r <- evalExpr e
-    return $ I ((\(I i) -> (-1) * i) r)
-evalExpr (BinaryExpr0 op0) = evalBinary0 op0
-evalExpr (BinaryExpr1 op1) = evalBinary1 op1
+      Nothing -> case parentEnv env of
+                   Nothing     -> return $ Shit "no such value!"
+                   Just global -> evalExpr e global
+evalExpr (NegExpr e) env = do
+    r <- evalExpr e env
+    return $ f r where
+        f (I i) = I $ (-1) * i
+        f _     = Shit "not a negtive number!"
+evalExpr (BinaryExpr0 op0) env = evalBinary0 op0 env
+evalExpr (BinaryExpr1 op1) env = evalBinary1 op1 env
+-- evalExpr e@(FuncCall (Leaf (IdLit p)) paras) env = do
+--     local <- readIORef $ localEnv env
+--     case Map.lookup p local of
+--       Just r -> evalFunc r paras env
+--       Nothing -> case parentEnv env of
+--                    Nothing -> return $ Shit "no such function!"
+--                    Just global -> evalExpr e global
+evalExpr (FuncCall f args) env = do
+    func <- evalExpr f env
+    evalFunc func args env
 
-evalStmt :: Stmt -> St.State Env ()
-evalStmt (Simple e) = do
-    evalExpr e
-    return ()
-evalStmt (IfStmt e s) = do
-    r <- evalExpr e
+evalStmt :: Stmt -> Env -> IO Result
+evalStmt (Simple e) env = evalExpr e env
+evalStmt (IfStmt e s) env = do
+    r <- evalExpr e env
     if r == (B True) then
-         evalStmt s
+        evalStmt s env
     else
-         return ()
-evalStmt (IfElseStmt e s1 s2) = do
-    r <- evalExpr e
+        return NoResult
+evalStmt (IfElseStmt e s1 s2) env = do
+    r <- evalExpr e env
     if r == (B True) then
-         evalStmt s1
+        evalStmt s1 env
     else
-         evalStmt s2
-evalStmt p@(WhileStmt e s) = do
-    r <- evalExpr e
+        evalStmt s2 env
+evalStmt p@(WhileStmt e s) env = do
+    r <- evalExpr e env
     if r == (B True) then do
-         evalStmt s
-         evalStmt p
+        m <- evalStmt s env
+        n <- evalStmt p env
+        return n
     else
-         return ()
-evalStmt (List [])   = return ()
-evalStmt (List (s:ss)) = do
-    evalStmt s
-    evalStmt $ List ss
+        return NoResult --FIXME
+evalStmt (List [])     _   = return NoResult
+evalStmt (List [s])    env = evalStmt s env
+evalStmt (List (s:ss)) env = do
+    evalStmt s env
+    evalStmt (List ss) env
+evalStmt s@(Def e es stmt) env = do
+    k <- getName e
+    modifyIORef (localEnv env) (Map.insert k (Func s env))
+    return NoResult
 
-eval :: [Stmt] -> ((),Env)
-eval stmts = St.runState (sequence_ (map evalStmt stmts)) (Env Map.empty)
-
+eval :: [Stmt] -> IO [Result]
+eval stmts = do
+    global <- newIORef Map.empty :: IO (IORef (Map.Map String Result))
+    sequence $ map (`evalStmt` (Env global Nothing)) stmts
 
 

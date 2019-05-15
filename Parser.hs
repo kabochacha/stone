@@ -99,13 +99,13 @@ data Token = IntLit  Integer
            deriving (Show, Eq)
      
 data Op1 = Add Expr Expr
-        | Sub Expr Expr
-        | Mul Expr Expr
-        | Div Expr Expr
-        | Mod Expr Expr
-        | Equ Expr Expr
-        | Les Expr Expr
-        | Mor Expr Expr
+         | Sub Expr Expr
+         | Mul Expr Expr
+         | Div Expr Expr
+         | Mod Expr Expr
+         | Equ Expr Expr
+         | Les Expr Expr
+         | Mor Expr Expr
         deriving (Show, Eq)
 
 data Op0 = Ass Expr Expr
@@ -115,8 +115,22 @@ data Expr = Leaf Token
           | NegExpr Expr
           | BinaryExpr0 Op0
           | BinaryExpr1 Op1
-          | FuncCall Expr [[Expr]]
-          deriving (Show, Eq)
+          | FuncCall Expr [Expr]
+          deriving (Eq)
+
+instance Show Expr where
+    show (Leaf t) = showsPrec 11 t ""
+    show (NegExpr e) = "-" ++ showsPrec 10 e ""
+    show (FuncCall e1 es) = "(" ++ "fc"  ++ showsPrec 10 e1 "" ++ show es ++ ")"
+    show (BinaryExpr0 (Ass e1 e2)) = "(" ++ showsPrec 10 e1 "" ++ " = "  ++ showsPrec 10 e2 "" ++ ")"
+    show (BinaryExpr1 (Add e1 e2)) = "(" ++ showsPrec 10 e1 "" ++ " + "  ++ showsPrec 10 e2 "" ++ ")"
+    show (BinaryExpr1 (Sub e1 e2)) = "(" ++ showsPrec 10 e1 "" ++ " - "  ++ showsPrec 10 e2 "" ++ ")"
+    show (BinaryExpr1 (Mul e1 e2)) = "(" ++ showsPrec 10 e1 "" ++ " * "  ++ showsPrec 10 e2 "" ++ ")"
+    show (BinaryExpr1 (Div e1 e2)) = "(" ++ showsPrec 10 e1 "" ++ " / "  ++ showsPrec 10 e2 "" ++ ")"
+    show (BinaryExpr1 (Mod e1 e2)) = "(" ++ showsPrec 10 e1 "" ++ " % "  ++ showsPrec 10 e2 "" ++ ")"
+    show (BinaryExpr1 (Equ e1 e2)) = "(" ++ showsPrec 10 e1 "" ++ " == " ++ showsPrec 10 e2 "" ++ ")"
+    show (BinaryExpr1 (Mor e1 e2)) = "(" ++ showsPrec 10 e1 "" ++ " > "  ++ showsPrec 10 e2 "" ++ ")"
+    show (BinaryExpr1 (Les e1 e2)) = "(" ++ showsPrec 10 e1 "" ++ " < "  ++ showsPrec 10 e2 "" ++ ")"
 
 data Stmt = Simple Expr 
           | IfStmt Expr Stmt
@@ -141,7 +155,7 @@ idExpr :: Parser Expr
 idExpr = spaces *> (Leaf <$> (IdLit <$> ident))
 
 boolExpr :: Parser Expr
-boolExpr = spaces *> (Leaf <$> (BoolLit .read <$> bool))
+boolExpr = spaces *> (Leaf <$> (BoolLit . read <$> bool))
 
 stringExpr :: Parser Expr
 stringExpr = spaces *> (Leaf <$> (StrLit <$> string))
@@ -165,12 +179,25 @@ postfix = spaces *> char '(' *>
     (zero1 [] args)
     <* spaces <* char ')' 
 
+-- primary :: Parser Expr
+-- primary = FuncCall <$> (spaces *> char '(' *> expr <* spaces <* char ')'
+--       <|> numberExpr
+--       <|> idExpr
+--       <|> boolExpr
+--       <|> stringExpr) <*> many0 postfix
+
+primary2 :: Parser Expr
+primary2 = spaces *> char '(' *> expr <* spaces <* char ')'
+       -- <|> Funcall <$> primary <*> postfix
+       <|> numberExpr
+       <|> boolExpr
+       <|> stringExpr
+       <|> idExpr
+
 primary :: Parser Expr
-primary = FuncCall <$> (spaces *> char '(' *> expr <* spaces <* char ')'
-      <|> numberExpr
-      <|> idExpr
-      <|> boolExpr
-      <|> stringExpr) <*> many0 postfix
+-- primary = Funcall <$> primary2 <*> many1 postfix
+primary = foldl (flip ($)) <$> primary2 <*> many0 (flip FuncCall <$> postfix) -- not many1?
+      <|> primary2
 
 factor :: Parser Expr
 factor = spaces *> (NegExpr <$> (char '-' *> primary) <|> primary)
