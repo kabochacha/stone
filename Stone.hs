@@ -15,15 +15,21 @@ sample7 = "x = 1\n    def foo(x) {x} \n def bar(x) {foo(x+1)}\n      main = bar(
 sample8 = "def foo(x) {  x+ 2 \n  }    \n foo(4)"
 sample9 = "y = 1\n    def foo(x) {y + x}\n    def bar(x) { y = x+ 10\n  foo(x) }\n         bar(1)"
 sample10 = "def foo(x) {x+1}\n     def bar(x) {  foo(x+10)  } \n      bar(5)"
+sample11 = " q = 199 a = [1,32,9,q]  def foo(x) {a[x]}\n     def bar(x) {  foo(x+1)  } \n      bar(2)"
 
 test = pull . runParser program 
     where
         pull (Just (x,s)) = x
         pull Nothing      = []
 
+stone' :: String -> IO [Result]
+stone' s = eval $ test s
+
 stone :: String -> IO Result
 stone s = do
     r <- eval $ test s
     return $ last r
+
+
 
 

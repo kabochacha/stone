@@ -26,10 +26,11 @@ showEnv env = do
 printEnv :: Env -> IO ()
 printEnv env = showEnv env >>= putStrLn
 
-data Result = Func Stmt Env | I Integer | B Bool | S String | NoResult | Shit String
+data Result = Arr [Result] | Func Stmt Env | I Integer | B Bool | S String | NoResult | Shit String
     deriving (Eq)
 
 instance Show Result where
+    show (Arr rs)   = show rs
     show (Func s _) = show s
     show (I i)      = show i
     show (B b)      = show b
@@ -94,7 +95,17 @@ evalFunc (Func s@(Def name args stmt) defEnv) things evalEnv =
         -- ll <- readIORef local
         -- trace ("call " ++ show name ++ " with " ++ show ll) (return ())
         evalStmt stmt (Env local (Just defEnv)) -- which one should be the parentEnv?
-evalFunc _ _ _ = return $ Shit "not a function!"
+evalFunc (Arr rs) e env =
+    if (length e) > 1 || (length e) == 0 then return (Shit "zero index or too many indices!") else do
+        r <- evalExpr (e!!0) env
+        return (f r) where
+            f (I i)
+              | index >= (length rs) || index < 0 = Shit "index out of range!"
+              | otherwise = (rs!!index)
+                where
+                    index = fromInteger i
+            f _ = Shit "not a proper index!"
+evalFunc _ _ _ = return $ Shit "not a callable value!"
 
 evalExpr :: Expr -> Env -> IO Result
 evalExpr (Leaf (IntLit  i)) _   = return $ I i
@@ -116,16 +127,14 @@ evalExpr (NegExpr e) env = do
         f _     = Shit "not a negtive number!"
 evalExpr (BinaryExpr0 op0) env = evalBinary0 op0 env
 evalExpr (BinaryExpr1 op1) env = evalBinary1 op1 env
--- evalExpr e@(FuncCall (Leaf (IdLit p)) paras) env = do
---     local <- readIORef $ localEnv env
---     case Map.lookup p local of
---       Just r -> evalFunc r paras env
---       Nothing -> case parentEnv env of
---                    Nothing -> return $ Shit "no such function!"
---                    Just global -> evalExpr e global
 evalExpr (FuncCall f args) env = do
     func <- evalExpr f env
     evalFunc func args env
+-- evalExpr (Array []) env = return $ Arr []
+evalExpr (Array es) env = do
+    a <- forM [0..((length es) - 1)] $ \i ->
+        evalExpr (es!!i) env
+    return $ Arr a
 
 evalStmt :: Stmt -> Env -> IO Result
 evalStmt (Simple e) env = evalExpr e env

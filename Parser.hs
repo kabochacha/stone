@@ -84,12 +84,6 @@ string = char '\"' *> many1 alpha <* char '\"'
 ident :: Parser String
 ident = (:) <$> alpha <*> many0 alphaNum
 
---token :: Parser String
---token = int <|> ident <|> string
---
---tokens :: Parser [String]
---tokens = many0 (spaces *> token) <* spaces
-
 ------------AST----------------
 
 data Token = IntLit  Integer
@@ -116,12 +110,14 @@ data Expr = Leaf Token
           | BinaryExpr0 Op0
           | BinaryExpr1 Op1
           | FuncCall Expr [Expr]
+          | Array [Expr]
           deriving (Eq)
 
 instance Show Expr where
     show (Leaf t) = showsPrec 11 t ""
     show (NegExpr e) = "-" ++ showsPrec 10 e ""
     show (FuncCall e1 es) = "(" ++ "fc"  ++ showsPrec 10 e1 "" ++ show es ++ ")"
+    show (Array es) = show es
     show (BinaryExpr0 (Ass e1 e2)) = "(" ++ showsPrec 10 e1 "" ++ " = "  ++ showsPrec 10 e2 "" ++ ")"
     show (BinaryExpr1 (Add e1 e2)) = "(" ++ showsPrec 10 e1 "" ++ " + "  ++ showsPrec 10 e2 "" ++ ")"
     show (BinaryExpr1 (Sub e1 e2)) = "(" ++ showsPrec 10 e1 "" ++ " - "  ++ showsPrec 10 e2 "" ++ ")"
@@ -145,8 +141,6 @@ zero1 a p = p <|> pure a
 
 eol :: Parser String
 eol = spaces *> many0 (char ';'<|> char '\n')
---eol :: Parser String
---eol = spaces *> chars ";" <|> many0 (satisfy (\c -> c /= '\n' && isSpace c)) *> (chars "\n")
 
 numberExpr :: Parser Expr
 numberExpr = spaces *> (Leaf <$> (IntLit . read <$> int))
@@ -175,27 +169,18 @@ args :: Parser [Expr]
 args = (:) <$> expr <*> many0 (spaces *> char ',' *> expr)
 
 postfix :: Parser [Expr]
-postfix = spaces *> char '(' *>
-    (zero1 [] args)
-    <* spaces <* char ')' 
-
--- primary :: Parser Expr
--- primary = FuncCall <$> (spaces *> char '(' *> expr <* spaces <* char ')'
---       <|> numberExpr
---       <|> idExpr
---       <|> boolExpr
---       <|> stringExpr) <*> many0 postfix
+postfix = spaces *> char '(' *> (zero1 [] args)        <* spaces <* char ')' 
+      <|> spaces *> char '[' *> ((\e -> [e]) <$> expr) <* spaces <* char ']'
 
 primary2 :: Parser Expr
-primary2 = spaces *> char '(' *> expr <* spaces <* char ')'
-       -- <|> Funcall <$> primary <*> postfix
+primary2 = spaces *> char '[' *> (Array <$> elements) <* spaces <* char ']'
+       <|> spaces *> char '(' *> expr                 <* spaces <* char ')'
        <|> numberExpr
        <|> boolExpr
        <|> stringExpr
        <|> idExpr
 
 primary :: Parser Expr
--- primary = Funcall <$> primary2 <*> many1 postfix
 primary = foldl (flip ($)) <$> primary2 <*> many0 (flip FuncCall <$> postfix) -- not many1?
       <|> primary2
 
@@ -222,6 +207,12 @@ expr  = spaces *> (flip (foldr ($)) <$> many0 ((\l op r -> BinaryExpr0 (op l r))
 expr1 :: Parser Expr
 expr1 = spaces *> (foldl (flip ($)) <$> factor <*> many0 ((\op' r l -> BinaryExpr1 (op' l r)) <$> op1 <*> factor))
 
+elements :: Parser [Expr]
+elements = (:) <$> expr <*> many0 (char ',' *> expr)
+
+simple :: Parser Stmt
+simple = Simple <$> expr
+
 def :: Parser Stmt
 def = spaces *> chars "def" *>
     (Def <$> idExpr <*> paramList <*> block)
@@ -231,9 +222,6 @@ block = spaces *> char '{' *>
         (List <$> ((++) <$> (zero1 [] ((:) <$> statement <*> pure [])) <*> many0 (eol *> statement)))
         <* spaces <* char '}'
 
-simple :: Parser Stmt
-simple = Simple <$> expr
-
 statement :: Parser Stmt
 statement =  spaces  *> chars    "if" *> (IfElseStmt <$> expr <*> block <*> (spaces *> chars "else" *> block))
          <|> spaces  *> chars    "if" *> (IfStmt     <$> expr <*> block)
@@ -241,7 +229,6 @@ statement =  spaces  *> chars    "if" *> (IfElseStmt <$> expr <*> block <*> (spa
          <|> simple
 
 program :: Parser [Stmt]
---program = (zero1 [] ((\s -> [s]) <$> def <|> (\s -> [s]) <$> statement) <* eol)
 program = many0 ((def <|> statement) <* eol)
 
 
