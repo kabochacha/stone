@@ -41,10 +41,6 @@ isSubType _ Any = True
 isSubType Any _ = False
 isSubType _ _ = False
 
-getName :: Expr -> IO String
-getName (Leaf (IdLit p)) = return p
-getName _                = return "" --FIXME
-
 typeCheckBin1 :: Op1 -> Env -> IO Type
 typeCheckBin1 (Add e1 e2) env = do
     t1 <- typeCheckExpr e1 env

@@ -3,7 +3,7 @@ module Stone where
 
 import Parser
 import TypeChecker
--- import Eval
+import Eval
 import Debug.Trace
 
 sample1 = "a=2\nb = 1\n c  = a+b"
@@ -26,13 +26,20 @@ test = pull . runParser program
 compile :: String -> IO [Type]
 compile = typeCheck . test
 
--- stone' :: String -> IO [Result]
--- stone' s = eval $ test s
--- 
--- stone :: String -> IO Result
--- stone s = do
---     r <- eval $ test s
---     return $ last r
+stone' :: String -> IO [Result]
+stone' s = do
+    ts <- typeCheck $ test s
+    if all (not . ifTypeError) ts then eval (test s) else do
+        print ts
+        return []
+    where
+        ifTypeError (TypeError _) = True
+        ifTypeError _             = False
+
+stone :: String -> IO Result
+stone s = do
+    r <- eval $ test s
+    return $ last r
 
 
 
