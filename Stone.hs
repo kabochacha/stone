@@ -2,7 +2,8 @@
 module Stone where
 
 import Parser
-import Eval
+import TypeChecker
+-- import Eval
 import Debug.Trace
 
 sample1 = "a=2\nb = 1\n c  = a+b"
@@ -22,13 +23,16 @@ test = pull . runParser program
         pull (Just (x,s)) = x
         pull Nothing      = []
 
-stone' :: String -> IO [Result]
-stone' s = eval $ test s
+compile :: String -> IO [Type]
+compile = typeCheck . test
 
-stone :: String -> IO Result
-stone s = do
-    r <- eval $ test s
-    return $ last r
+-- stone' :: String -> IO [Result]
+-- stone' s = eval $ test s
+-- 
+-- stone :: String -> IO Result
+-- stone s = do
+--     r <- eval $ test s
+--     return $ last r
 
 
 

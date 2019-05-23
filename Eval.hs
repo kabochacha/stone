@@ -2,6 +2,7 @@
 module Eval where
 
 import Parser
+import TypeChecker
 import Control.Applicative
 import Control.Monad
 import Data.Char

@@ -111,6 +111,7 @@ data Expr = Leaf Token
           | BinaryExpr1 Op1
           | FuncCall Expr [Expr]
           | Array [Expr]
+          | TypeTag Expr [Expr]
           deriving (Eq)
 
 instance Show Expr where
@@ -118,6 +119,7 @@ instance Show Expr where
     show (NegExpr e) = "-" ++ showsPrec 10 e ""
     show (FuncCall e1 es) = "(" ++ "fc"  ++ showsPrec 10 e1 "" ++ show es ++ ")"
     show (Array es) = show es
+    show (TypeTag e es) = show e ++ " : " ++ show es 
     show (BinaryExpr0 (Ass e1 e2)) = "(" ++ showsPrec 10 e1 "" ++ " = "  ++ showsPrec 10 e2 "" ++ ")"
     show (BinaryExpr1 (Add e1 e2)) = "(" ++ showsPrec 10 e1 "" ++ " + "  ++ showsPrec 10 e2 "" ++ ")"
     show (BinaryExpr1 (Sub e1 e2)) = "(" ++ showsPrec 10 e1 "" ++ " - "  ++ showsPrec 10 e2 "" ++ ")"
@@ -133,7 +135,8 @@ data Stmt = Simple Expr
           | IfElseStmt Expr Stmt Stmt
           | WhileStmt Expr Stmt
           | List [Stmt]
-          | Def Expr [Expr] Stmt
+          | Def Expr [Expr] [Expr] Stmt
+          | Var Expr [Expr] Expr
           deriving (Show, Eq)
 
 zero1 :: a -> Parser a -> Parser a
@@ -154,8 +157,11 @@ boolExpr = spaces *> (Leaf <$> (BoolLit . read <$> bool))
 stringExpr :: Parser Expr
 stringExpr = spaces *> (Leaf <$> (StrLit <$> string))
 
+typeTag :: Parser Expr
+typeTag = spaces *> char ':' *> idExpr
+
 param :: Parser Expr
-param = idExpr
+param = TypeTag <$> idExpr <*> (zero1 [] ((\e -> [e]) <$> typeTag))
 
 params :: Parser [Expr]
 params = (:) <$> param <*> many0 (spaces *> char ',' *> param)
@@ -210,12 +216,16 @@ expr1 = spaces *> (foldl (flip ($)) <$> factor <*> many0 ((\op' r l -> BinaryExp
 elements :: Parser [Expr]
 elements = (:) <$> expr <*> many0 (char ',' *> expr)
 
+variable :: Parser Stmt
+variable = spaces *> chars "var" *>
+    (Var <$> idExpr <*> (zero1 [] ((\e -> [e]) <$> typeTag)) <* spaces <* char '=' <*> expr)
+
 simple :: Parser Stmt
 simple = Simple <$> expr
 
 def :: Parser Stmt
 def = spaces *> chars "def" *>
-    (Def <$> idExpr <*> paramList <*> block)
+    (Def <$> idExpr <*> paramList <*> (zero1 [] ((\e -> [e]) <$> typeTag)) <*> block)
 
 block :: Parser Stmt
 block = spaces *> char '{' *>
@@ -223,10 +233,11 @@ block = spaces *> char '{' *>
         <* spaces <* char '}'
 
 statement :: Parser Stmt
-statement =  spaces  *> chars    "if" *> (IfElseStmt <$> expr <*> block <*> (spaces *> chars "else" *> block))
-         <|> spaces  *> chars    "if" *> (IfStmt     <$> expr <*> block)
-         <|> spaces  *> chars "while" *> (WhileStmt  <$> expr <*> block)
-         <|> simple
+statement = variable
+        <|> spaces *> chars    "if" *> (IfElseStmt <$> expr <*> block <*> (spaces *> chars "else" *> block))
+        <|> spaces *> chars    "if" *> (IfStmt     <$> expr <*> block)
+        <|> spaces *> chars "while" *> (WhileStmt  <$> expr <*> block)
+        <|> simple
 
 program :: Parser [Stmt]
 program = many0 ((def <|> statement) <* eol)
