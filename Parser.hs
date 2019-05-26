@@ -84,12 +84,6 @@ string = char '\"' *> many1 alpha <* char '\"'
 ident :: Parser String
 ident = (:) <$> alpha <*> many0 alphaNum
 
---token :: Parser String
---token = int <|> ident <|> string
---
---tokens :: Parser [String]
---tokens = many0 (spaces *> token) <* spaces
-
 ------------AST----------------
 
 data Token = IntLit  Integer
@@ -99,13 +93,13 @@ data Token = IntLit  Integer
            deriving (Show, Eq)
      
 data Op1 = Add Expr Expr
-        | Sub Expr Expr
-        | Mul Expr Expr
-        | Div Expr Expr
-        | Mod Expr Expr
-        | Equ Expr Expr
-        | Les Expr Expr
-        | Mor Expr Expr
+         | Sub Expr Expr
+         | Mul Expr Expr
+         | Div Expr Expr
+         | Mod Expr Expr
+         | Equ Expr Expr
+         | Les Expr Expr
+         | Mor Expr Expr
         deriving (Show, Eq)
 
 data Op0 = Ass Expr Expr
@@ -115,13 +109,34 @@ data Expr = Leaf Token
           | NegExpr Expr
           | BinaryExpr0 Op0
           | BinaryExpr1 Op1
-          deriving (Show, Eq)
+          | FuncCall Expr [Expr]
+          | Array [Expr]
+          | TypeTag Expr [Expr]
+          deriving (Eq)
 
-data Stmt = Simple Expr
+instance Show Expr where
+    show (Leaf t) = showsPrec 11 t ""
+    show (NegExpr e) = "-" ++ showsPrec 10 e ""
+    show (FuncCall e1 es) = "(" ++ "fc"  ++ showsPrec 10 e1 "" ++ show es ++ ")"
+    show (Array es) = show es
+    show (TypeTag e es) = show e ++ " : " ++ show es 
+    show (BinaryExpr0 (Ass e1 e2)) = "(" ++ showsPrec 10 e1 "" ++ " = "  ++ showsPrec 10 e2 "" ++ ")"
+    show (BinaryExpr1 (Add e1 e2)) = "(" ++ showsPrec 10 e1 "" ++ " + "  ++ showsPrec 10 e2 "" ++ ")"
+    show (BinaryExpr1 (Sub e1 e2)) = "(" ++ showsPrec 10 e1 "" ++ " - "  ++ showsPrec 10 e2 "" ++ ")"
+    show (BinaryExpr1 (Mul e1 e2)) = "(" ++ showsPrec 10 e1 "" ++ " * "  ++ showsPrec 10 e2 "" ++ ")"
+    show (BinaryExpr1 (Div e1 e2)) = "(" ++ showsPrec 10 e1 "" ++ " / "  ++ showsPrec 10 e2 "" ++ ")"
+    show (BinaryExpr1 (Mod e1 e2)) = "(" ++ showsPrec 10 e1 "" ++ " % "  ++ showsPrec 10 e2 "" ++ ")"
+    show (BinaryExpr1 (Equ e1 e2)) = "(" ++ showsPrec 10 e1 "" ++ " == " ++ showsPrec 10 e2 "" ++ ")"
+    show (BinaryExpr1 (Mor e1 e2)) = "(" ++ showsPrec 10 e1 "" ++ " > "  ++ showsPrec 10 e2 "" ++ ")"
+    show (BinaryExpr1 (Les e1 e2)) = "(" ++ showsPrec 10 e1 "" ++ " < "  ++ showsPrec 10 e2 "" ++ ")"
+
+data Stmt = Simple Expr 
           | IfStmt Expr Stmt
           | IfElseStmt Expr Stmt Stmt
           | WhileStmt Expr Stmt
           | List [Stmt]
+          | Def Expr [Expr] [Expr] Stmt
+          | Var Expr [Expr] Expr
           deriving (Show, Eq)
 
 zero1 :: a -> Parser a -> Parser a
@@ -129,19 +144,51 @@ zero1 a p = p <|> pure a
 
 eol :: Parser String
 eol = spaces *> many0 (char ';'<|> char '\n')
---eol :: Parser String
---eol = spaces *> chars ";" <|> many0 (satisfy (\c -> c /= '\n' && isSpace c)) *> (chars "\n")
 
-tokenize :: Parser Token
-tokenize = spaces *> token
-    where token = IntLit  . read <$> int
-              <|> BoolLit . read <$> bool
-              <|> StrLit         <$> string
-              <|> IdLit          <$> ident
+numberExpr :: Parser Expr
+numberExpr = spaces *> (Leaf <$> (IntLit . read <$> int))
+
+idExpr :: Parser Expr
+idExpr = spaces *> (Leaf <$> (IdLit <$> ident))
+
+boolExpr :: Parser Expr
+boolExpr = spaces *> (Leaf <$> (BoolLit . read <$> bool))
+
+stringExpr :: Parser Expr
+stringExpr = spaces *> (Leaf <$> (StrLit <$> string))
+
+typeTag :: Parser Expr
+typeTag = spaces *> char ':' *> idExpr
+
+param :: Parser Expr
+param = TypeTag <$> idExpr <*> (zero1 [] ((\e -> [e]) <$> typeTag))
+
+params :: Parser [Expr]
+params = (:) <$> param <*> many0 (spaces *> char ',' *> param)
+
+paramList :: Parser [Expr]
+paramList = spaces *> char '(' *>
+    (zero1 [] params)
+    <* spaces <* char ')'
+
+args :: Parser [Expr]
+args = (:) <$> expr <*> many0 (spaces *> char ',' *> expr)
+
+postfix :: Parser [Expr]
+postfix = spaces *> char '(' *> (zero1 [] args)        <* spaces <* char ')' 
+      <|> spaces *> char '[' *> ((\e -> [e]) <$> expr) <* spaces <* char ']'
+
+primary2 :: Parser Expr
+primary2 = spaces *> char '[' *> (Array <$> elements) <* spaces <* char ']'
+       <|> spaces *> char '(' *> expr                 <* spaces <* char ')'
+       <|> numberExpr
+       <|> boolExpr
+       <|> stringExpr
+       <|> idExpr
 
 primary :: Parser Expr
-primary = spaces *> char '(' *> expr <* spaces <* char ')'
-      <|> Leaf <$> tokenize
+primary = foldl (flip ($)) <$> primary2 <*> many0 (flip FuncCall <$> postfix) -- not many1?
+      <|> primary2
 
 factor :: Parser Expr
 factor = spaces *> (NegExpr <$> (char '-' *> primary) <|> primary)
@@ -160,24 +207,41 @@ op1    = spaces *>
     <|> Les <$ char  '<'
     <|> Mor <$ char  '>')
 
-expr :: Parser Expr
-expr = spaces *> (flip (foldr ($)) <$> many0 ((\l op r -> BinaryExpr0 (op l r)) <$> expr1 <*> op0) <*> expr1)
+expr  :: Parser Expr
+expr  = spaces *> (flip (foldr ($)) <$> many0 ((\l op r -> BinaryExpr0 (op l r)) <$> expr1 <*> op0) <*> expr1)
 
 expr1 :: Parser Expr
 expr1 = spaces *> (foldl (flip ($)) <$> factor <*> many0 ((\op' r l -> BinaryExpr1 (op' l r)) <$> op1 <*> factor))
 
+elements :: Parser [Expr]
+elements = (:) <$> expr <*> many0 (char ',' *> expr)
+
+variable :: Parser Stmt
+variable = spaces *> chars "var" *>
+    (Var <$> idExpr <*> (zero1 [] ((\e -> [e]) <$> typeTag)) <* spaces <* char '=' <*> expr)
+
+simple :: Parser Stmt
+simple = Simple <$> expr
+
+def :: Parser Stmt
+def = spaces *> chars "def" *>
+    (Def <$> idExpr <*> paramList <*> (zero1 [] ((\e -> [e]) <$> typeTag)) <*> block)
+
 block :: Parser Stmt
 block = spaces *> char '{' *>
-         -- ((\l r -> List (l:r)) <$> (zero1 (List []) statement) <*> many0 (eol *> statement))
         (List <$> ((++) <$> (zero1 [] ((:) <$> statement <*> pure [])) <*> many0 (eol *> statement)))
         <* spaces <* char '}'
 
 statement :: Parser Stmt
-statement =  spaces  *> chars    "if" *> (IfElseStmt <$> expr <*> block <*> (spaces *> chars "else" *> block))
-         <|> spaces  *> chars    "if" *> (IfStmt     <$> expr <*> block)
-         <|> spaces  *> chars "while" *> (WhileStmt  <$> expr <*> block)
-         <|> Simple <$> expr
+statement = variable
+        <|> spaces *> chars    "if" *> (IfElseStmt <$> expr <*> block <*> (spaces *> chars "else" *> block))
+        <|> spaces *> chars    "if" *> (IfStmt     <$> expr <*> block)
+        <|> spaces *> chars "while" *> (WhileStmt  <$> expr <*> block)
+        <|> simple
 
-program :: Parser Stmt
-program = statement <* eol
+program :: Parser [Stmt]
+program = many0 ((def <|> statement) <* eol)
+
+
+
 
