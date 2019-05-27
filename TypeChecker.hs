@@ -64,7 +64,7 @@ typeInference str t env = do
     info  <- readIORef $ typeInfo env
     case Map.lookup str local of
       Nothing -> return $ TypeError "no such variable!" -- never reach this branch?
-      Just t0 -> if t == Unknown then do
+      Just t0 -> if t == Unknown  || t0 == Unknown then do
                      modifyIORef (localEnv env) (Map.insert str t)
                      case Map.lookup str info of
                        Nothing -> do
@@ -80,6 +80,7 @@ typeInference str t env = do
 
 idName :: Expr -> String
 idName (Leaf (IdLit p)) = p
+idName (TypeTag (Leaf (IdLit p)) _) = p
 idName _ = ""
 
 typeCheckBin1 :: Op1 -> Env -> IO Type
@@ -124,7 +125,9 @@ typeCheckBin0 op0@(Ass (Leaf (IdLit p)) e) env = do
                        modifyIORef (localEnv env) (Map.insert p t)
                        typeInference p t env
                    Just global -> typeCheckBin0 op0 global
-      Just t0 -> if not (t `isSubType` t0) then
+      Just t0 -> if t == Unknown then typeInference (idName e) t0 env
+                 else if t0 == Unknown then typeInference p t env
+                 else if not (t `isSubType` t0) then
                  return (TypeError ("cannot assign " ++ show t0 ++ " to " ++ show t ++ "!"))
                  else do
                      modifyIORef (localEnv env) (Map.insert p t)
@@ -181,7 +184,7 @@ typeCheckExpr (Array es) env = do
     ts <- forM [0..((length es)-1)] $ \i -> typeCheckExpr (es!!i) env
     if (allEqual ts) then return (ArrayType (head ts))
     else return $ TypeError "multiple types in a single list!"
-typeCheckExpr (TypeTag _ [])                 env = return Any
+typeCheckExpr (TypeTag _ [])                 env = return Unknown
 typeCheckExpr (TypeTag _ [(Leaf (IdLit s))]) env = return $ string2Type s
 
 typeCheckStmt :: Stmt -> Env -> IO Type
@@ -201,17 +204,35 @@ typeCheckStmt (WhileStmt e s) env = do
 typeCheckStmt (List [])  _   = return Any
 typeCheckStmt (List [s]) env = typeCheckStmt s env
 typeCheckStmt (List (s:ss)) env = do
+    _ <- typeCheckStmt s env
     typeCheckStmt (List ss) env
 typeCheckStmt (Def (Leaf (IdLit p)) arguments tag stmt) env = do
-    ts <- forM [0..((length arguments)-1)] $ \i -> typeCheckExpr (arguments!!i) env
-    case tag of
-      [] -> do
-          modifyIORef (localEnv env) (Map.insert p (FuncType ts Any))
-          return $ FuncType ts Any
-      [(Leaf (IdLit s))] -> let t0 = string2Type s in
-          if t0 == (TypeError "unknown type!") then return t0 else do
-              modifyIORef (localEnv env) (Map.insert p (FuncType ts t0))
-              return $ FuncType ts t0
+    defLocal <- newIORef Map.empty :: IO (IORef (Map.Map String Type))
+    let defEnv = (Env (typeInfo env) defLocal (Just env)) in do
+        ts <- forM [0..((length arguments)-1)] $ \i -> (do
+            ti <- typeCheckExpr (arguments!!i) env
+            modifyIORef defLocal (Map.insert (idName (arguments!!i)) ti)
+            return ti)
+        tf <- return $ case tag of
+          [] -> Unknown
+          [(Leaf (IdLit s))] -> string2Type s
+        --modifyIORef defLocal (Map.insert p (FuncType ts tf))
+        tf' <- typeCheckStmt stmt defEnv
+        if tf /= Unknown && tf /= tf' then
+            return (TypeError ("declared return type " ++ show tf ++ " not matching actual return type " ++ show tf' ++ "!"))
+        else do
+            tf <- return tf'
+            local <- readIORef $ defLocal
+            ts <- forM [0..((length arguments)-1)] $ \i -> return $ pull (Map.lookup (idName (arguments!!i)) local)
+            print ts
+            let (tss, tff) = (\(t1, t2) -> (map foo t1, foo t2)) (ts, tf) in do
+                modifyIORef (localEnv env) (Map.insert p (FuncType tss tff))
+                return $ FuncType tss tff
+            where
+                pull (Just t) = t
+                pull Nothing  = Any
+                foo Unknown = Any
+                foo t = t
 typeCheckStmt (Var (Leaf (IdLit p)) [] e) env = do
     t <- typeCheckExpr e env
     modifyIORef (localEnv env) (Map.insert p t)
